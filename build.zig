@@ -5,11 +5,11 @@ pub fn build(b: *std.Build) !void {
         .os_tag = .freestanding,
         .abi = .eabi,
 
-        .cpu_features_add = std.Target.avr.featureSet(&.{std.Target.avr.Feature.jmpcall}),
+        .cpu_model = .{ .explicit = &std.Target.avr.cpu.atmega328p },
     });
     const bootsector = b.addObject(.{
         .name = "firmware",
-        .root_source_file = .{ .path = "main.zig" },
+        .root_source_file = .{ .path = "src/main.zig" },
         .target = target,
         .optimize = .ReleaseSmall,
     });
