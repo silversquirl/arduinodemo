@@ -9,21 +9,11 @@ pub fn Cpu(comptime variant_: Variant, comptime package_: Package) type {
         pub fn use() @This() {
             
             comptime {
-                var supported = false;
-                for (&.{
-                    std.Target.avr.cpu.atmega48a,
-                    std.Target.avr.cpu.atmega48pa,
-                    std.Target.avr.cpu.atmega88a,
-                    std.Target.avr.cpu.atmega88pa,
-                    std.Target.avr.cpu.atmega168a,
-                    std.Target.avr.cpu.atmega168pa,
-                    std.Target.avr.cpu.atmega328,
-                    std.Target.avr.cpu.atmega328p,
-                }) |v| {
-                    
-                    if (std.mem.eql(u8, v.name, @import("builtin").target.cpu.model.name)) supported = true;
+                if (!std.mem.eql(u8, variant.to_std().name, @import("builtin").target.cpu.model.name)) {
+                    const missing_cpu_features = "Cannot use the API of the " ++ @tagName(variant) ++ " CPU because this program is compiled for a " ++ @import("builtin").target.cpu.model.name ++ " CPU"
+                    ++ "\nnote: you can use the -Dcpu=" ++ variant.to_std().name ++ " option to change the target CPU";
+                    @compileError(missing_cpu_features);
                 }
-                if (!supported) return null;
             }
             return @This() { .is_current_target = .{} };
         }

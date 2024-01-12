@@ -9,7 +9,7 @@ export fn _start () void {
     mmio.setIoHigh(led.data_direction());
     while(true){
         mmio.setIoHigh(led.input());
-        delay(40000);
+        delay(100000);
     }
 }
 
