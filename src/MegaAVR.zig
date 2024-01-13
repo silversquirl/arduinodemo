@@ -7,9 +7,11 @@ pub fn Cpu(comptime variant_: Variant, comptime package_: Package) type {
 
         const REGISTER_SPACE_SIZE = 256;
         pub fn use() @This() {
-            
             comptime {
-                if (!std.mem.eql(u8, variant.to_std().name, @import("builtin").target.cpu.model.name)) {
+                const cpu_name = @import("builtin").target.cpu.model.name;
+                if (!(std.mem.eql(u8, variant.to_std().name, @import("builtin").target.cpu.model.name)
+                    or (cpu_name[cpu_name.len - 1] == 'p' and std.mem.eql(u8, variant.to_std().name, cpu_name[0..cpu_name.len - 1])))
+                ) {
                     const missing_cpu_features = "Cannot use the API of the " ++ @tagName(variant) ++ " CPU because this program is compiled for a " ++ @import("builtin").target.cpu.model.name ++ " CPU"
                     ++ "\nnote: you can use the -Dcpu=" ++ variant.to_std().name ++ " option to change the target CPU";
                     @compileError(missing_cpu_features);
