@@ -4,7 +4,8 @@
 
     .dependencies = .{
         .arduino = .{
-            .path = "../arduino"
+            .url = "https://github.com/Plecra/arduino/archive/d1ea9849bec8ea8df1bfd72566f5b745c9c0a858.tar.gz",
+            .hash = "122007c6f61db7c5a57731d37497546bb20802759c131544d68d6de7eb078c08e4ef",
         },
     },
 
