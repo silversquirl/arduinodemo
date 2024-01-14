@@ -76,6 +76,8 @@ fn cli() void {
     );
 }
 const PINS: [4]Pin = .{ D4, D5, D6, D7 };
+
+// Ideally we'd use a calling convention with full caller-preserves, but that's not supported yet
 fn main() noreturn {
     cli();
     copy_data_to_ram();
@@ -90,66 +92,72 @@ fn main() noreturn {
     for ("Hello, World!\n") |c| out(c);
     mmio.setPinMode(RS,.output);
     mmio.setPinMode(ENABLE,.output);
-    for (PINS) |pin| mmio.setPinMode(pin, .output);
+
+    // Be careful with optimizations! Removing `inline` here generates 60 bytes of iteration and translation logic
+    // FIXME: Improve codegen for setPinMode
+    inline for (PINS) |pin| mmio.setPinMode(pin, .output);
     burn_us(50 * 1000);
 
     mmio.setPin(RS, false);
     mmio.setPin(ENABLE, false);
 
-    write_four_bits(0x3);
-    burn_us(4500);
+    write_four_bits(0x3); // long call. 6 bytes
+    burn_us(4500);        // inlined : 16 bytes. codegen is not great here, it shuffles a lot of registers around
+                          // A call is 2 bytes, and 2 more for the arg somewhere. + 1 nop prelude in a sleep block makes this 3x smaller, and even better when a sleep is reused.
 
-    write_four_bits(0x3);
-    burn_us(4500);
+    write_four_bits(0x3); // 6
+    burn_us(4500);        // 10! It's smart abt reusing the registers from above. It's probably optimal at runtime, cool!
 
-    write_four_bits(0x3);
-    burn_us(150);
+    write_four_bits(0x3); // 6
+    burn_us(150);         // 12
 
-    write_four_bits(0x2);
+    write_four_bits(0x2); // 6
 
-    command(function_set | two_line | five_by_eight_dots | four_bit_mode);
-    command(display_control | display_on | cursor_on | blink_on);
-    command(clear_display);
-    burn_us(2000);
-    command(entry_mode_set | entry_left | entry_shift_decrement);
+    command(function_set | two_line | five_by_eight_dots | four_bit_mode); // 6
+    command(display_control | display_on | cursor_on | blink_on); // 6
+    command(clear_display); // 6
+    burn_us(2000); // 12
+    command(entry_mode_set | entry_left | entry_shift_decrement); // 6 (commands r all great. RCALLs could be better)
 
-    for ("It's alive!") |b| write(b);
+    for ("It's alive!") |b| write(b); // loop is 22 byte prelude, 6 byte prologue (register allocation is still awful), string is 11 bytes. `write` in inlined: 14 bytes, nice!
     
-    var cmd: u8 = display_control;
+    var cmd: u8 = display_control; // 2 bytes
 
     sbi(DDRB, LED_PIN);
     while (true) {
         sbi(PINB, LED_PIN);
-        cmd ^= display_on;
-        command(cmd);
+        cmd ^= display_on; // 2 bytes + 2 bytes allocating reg
+        command(cmd); // 6 bytes - failed to allocate registers again. This should be 4 bytes
         burn_us(500 * 1000);
     }
 }
 fn pulse_enable() void {
-    mmio.setPin(ENABLE, false);
-    burn_us(1);
+    mmio.setPin(ENABLE, false); // perfect: 2 bytes
+    burn_us(1);                 // 14 bytes
     mmio.setPin(ENABLE, true);
-    burn_us(1); // enable pulse must be >450ns
+    burn_us(1); // enable pulse must be >450ns  // 8 bytes! good job :)
     mmio.setPin(ENABLE, false);
-    burn_us(100); // commands need > 37us to settle
+    burn_us(100); // commands need > 37us to settle // 12 bytes
 }
 fn write_four_bits(bits: u4) void {
-    for (0..4) |i| {
+    inline for (0..4) |i| { // loopimpl is 62 bytes! It can't tell what kind of accesses it's making so the masking uses in->andinvert->or->out
         mmio.setPin(PINS[i], (bits >> @truncate(i)) & 0x01 != 0);
     }
-    pulse_enable();
+    pulse_enable(); // inlined.
 }
 fn command(value: u8) void {
-    mmio.setPin(RS, false);
-
-    write_four_bits(@truncate(value >> 4));
-    write_four_bits(@truncate(value));
+    mmio.setPin(RS, false); // 2 bytes
+    write_eight_bits(value); // 4 bytes
+    // 2 bytes for return (aw. should've tailed)
 }
 fn write(value: u8) void {
     mmio.setPin(RS, true);
-
-    write_four_bits(@truncate(value >> 4));
-    write_four_bits(@truncate(value));
+    write_eight_bits(value);
+}
+fn write_eight_bits(value: u8) void {
+    write_four_bits(@truncate(value >> 4)); // 16 bytes (need to move registers around. callconv doesn't give any scratch)
+    write_four_bits(@truncate(value)); // 4 bytes
+    // return 2
 }
 export fn trampoline() callconv(.C) noreturn {
     @call(.always_inline, main, .{});
