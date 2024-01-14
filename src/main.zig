@@ -29,6 +29,42 @@ fn burn_24bit(low: u16, high: u8)  void {
     // return in 4 cycles for 16 bit PC - atmega328p has 32k of flash
     return;
 }
+const sleeps: [5]u32 = .{
+    50 * 1000,
+    4500,
+    150,
+    500 * 1000,
+    1,
+
+};
+const sleeps_low: [5]u16 = .{
+    @truncate(calc_iters(sleeps[0])),
+    @truncate(calc_iters(sleeps[1])),
+    @truncate(calc_iters(sleeps[2])),
+    @truncate(calc_iters(sleeps[3])),
+    @truncate(calc_iters(sleeps[4])),
+};
+const sleeps_high: [5]u8 = .{
+    @truncate(calc_iters(sleeps[0]) >> 16),
+    @truncate(calc_iters(sleeps[1]) >> 16),
+    @truncate(calc_iters(sleeps[2]) >> 16),
+    @truncate(calc_iters(sleeps[3]) >> 16),
+    @truncate(calc_iters(sleeps[4]) >> 16),
+};
+
+fn small_sleep_inner(id: u8) void {
+    // Ideally we'd use a single array here, but codegen is best like this. LLVM can't consolodate the loads of a [3]u8.
+    return burn_24bit(sleeps_low[id], sleeps_high[id]);
+}
+inline fn small_sleep(id: u8) void {
+    @call(.never_inline, small_sleep_inner, .{ id });
+}
+fn calc_iters(us: u32) u32 {
+    const cycles_to_burn = (us * cycles_per_micro);
+    // cycles_to_burn = (low + high * 2^16) * (2 + 1 + 2) + 1 + (4)
+    // (cycles_to_burn - 5) / 5 = (low + high * 2^16) = iters
+    return (cycles_to_burn - 5) / 5;
+}
 const freq = 16 * 1000 * 1000;
 const micro = 1000 * 1000;
 const cycles_per_micro = freq  / micro;
@@ -96,27 +132,27 @@ fn main() noreturn {
     // Be careful with optimizations! Removing `inline` here generates 60 bytes of iteration and translation logic
     // FIXME: Improve codegen for setPinMode
     inline for (PINS) |pin| mmio.setPinMode(pin, .output);
-    burn_us(50 * 1000);
 
     mmio.setPin(RS, false);
     mmio.setPin(ENABLE, false);
 
+    small_sleep(0);
     write_four_bits(0x3); // long call. 6 bytes
-    burn_us(4500);        // inlined : 16 bytes. codegen is not great here, it shuffles a lot of registers around
+    small_sleep(1);       // inlined : 16 bytes. codegen is not great here, it shuffles a lot of registers around
                           // A call is 2 bytes, and 2 more for the arg somewhere. + 1 nop prelude in a sleep block makes this 3x smaller, and even better when a sleep is reused.
 
     write_four_bits(0x3); // 6
-    burn_us(4500);        // 10! It's smart abt reusing the registers from above. It's probably optimal at runtime, cool!
+    small_sleep(1);        // 10! It's smart abt reusing the registers from above. It's probably optimal at runtime, cool!
 
     write_four_bits(0x3); // 6
-    burn_us(150);         // 12
+    small_sleep(3);         // 12
 
     write_four_bits(0x2); // 6
 
     command(function_set | two_line | five_by_eight_dots | four_bit_mode); // 6
     command(display_control | display_on | cursor_on | blink_on); // 6
     command(clear_display); // 6
-    burn_us(2000); // 12
+    small_sleep(1); // 12
     command(entry_mode_set | entry_left | entry_shift_decrement); // 6 (commands r all great. RCALLs could be better)
 
     for ("It's alive!") |b| write(b); // loop is 22 byte prelude, 6 byte prologue (register allocation is still awful), string is 11 bytes. `write` in inlined: 14 bytes, nice!
@@ -128,21 +164,33 @@ fn main() noreturn {
         sbi(PINB, LED_PIN);
         cmd ^= display_on; // 2 bytes + 2 bytes allocating reg
         command(cmd); // 6 bytes - failed to allocate registers again. This should be 4 bytes
-        burn_us(500 * 1000);
+        small_sleep(3);
     }
 }
 fn pulse_enable() void {
     mmio.setPin(ENABLE, false); // perfect: 2 bytes
-    burn_us(1);                 // 14 bytes
+    small_sleep(4);                 // 14 bytes
     mmio.setPin(ENABLE, true);
-    burn_us(1); // enable pulse must be >450ns  // 8 bytes! good job :)
+    small_sleep(4); // enable pulse must be >450ns  // 8 bytes! good job :)
     mmio.setPin(ENABLE, false);
-    burn_us(100); // commands need > 37us to settle // 12 bytes
+    small_sleep(2); // commands need > 37us to settle // 12 bytes
 }
-fn write_four_bits(bits: u4) void {
-    inline for (0..4) |i| { // loopimpl is 62 bytes! It can't tell what kind of accesses it's making so the masking uses in->andinvert->or->out
-        mmio.setPin(PINS[i], (bits >> @truncate(i)) & 0x01 != 0);
-    }
+const mask: u8 = (1 << D4.pin_idx()) | (1 << D5.pin_idx()) | (1 << D6.pin_idx()) | (1 << D7.pin_idx());
+comptime {
+    std.debug.assert(D4.data_register() == D5.data_register());
+    std.debug.assert(D4.data_register() == D6.data_register());
+    std.debug.assert(D4.data_register() == D7.data_register());
+}
+
+fn write_four_bits(bits: u8) void {
+    mmio.io[D4.data_register()] &= ~mask;
+
+    // These ifs should be compiling as sbrs, but use (in->and->or->out) instead.
+    if (bits & 0x01 != 0) mmio.setPin(D4, true);
+    if (bits & 0x02 != 0) mmio.setPin(D5, true);
+    if (bits & 0x04 != 0) mmio.setPin(D6, true);
+    if (bits & 0x08 != 0) mmio.setPin(D7, true);
+    
     pulse_enable(); // inlined.
 }
 fn command(value: u8) void {
@@ -154,9 +202,12 @@ fn write(value: u8) void {
     mmio.setPin(RS, true);
     write_eight_bits(value);
 }
+fn swap_nibbles(value: u8) u8 {
+    return (value << 4) | (value >> 4);
+}
 fn write_eight_bits(value: u8) void {
-    write_four_bits(@truncate(value >> 4)); // 16 bytes (need to move registers around. callconv doesn't give any scratch)
-    write_four_bits(@truncate(value)); // 4 bytes
+    write_four_bits(swap_nibbles(value)); // 16 bytes (need to move registers around. callconv doesn't give any scratch)
+    write_four_bits(value); // 4 bytes
     // return 2
 }
 export fn trampoline() callconv(.C) noreturn {
