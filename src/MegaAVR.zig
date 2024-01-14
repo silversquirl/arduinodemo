@@ -27,7 +27,7 @@ pub fn Cpu(comptime variant_: Variant, comptime package_: Package) type {
         pub fn get_io_space(_: *@This()) *volatile [REGISTER_SPACE_SIZE]u8 {
             return @ptrFromInt(0x20);
         }
-        pub fn get_memory_space(_: *@This()) *volatile @This().Abi {
+        pub fn get_memory_space(_: *const @This()) *volatile @This().Abi {
             return @ptrFromInt(0x20);
         }
         pub fn get_pin(pin: u8) Pin {
@@ -231,8 +231,8 @@ const mem_blocks: []const Block = blocks: while (true) {
             "UCSR0C", "UCPOL0", "UCSZ00", "UCSZ01", "USBS0", "UPM00", "UPM01", "UMSEL00", "UMSEL01",
         }},
         .{0xC4, &.{
-            "UBRR0H", "", "", "", "", "", "", "", "",
             "UBRR0L", "", "", "", "", "", "", "", "",
+            "UBRR0H", "", "", "", "", "", "", "", "",
             "UDR0", "", "", "", "", "", "", "", "",
         }}
     });
