@@ -65,6 +65,27 @@ fn main() noreturn {
     for ("Hello, World!\n") |c| out(c);
     lcd.init();
 
+    lcd.set_cursor(0,0);
+    var idx: u8 = '0';
+    while (idx <= '9') : (idx += 1) {
+        lcd.write(idx);
+        small_sleep(3);
+    }
+    // lcd.set_cursor(16, 1);
+    lcd.command(LCD.set_ddram_addr | 0x40 + 16);
+    // enable autoscrol
+    lcd.command(LCD.entry_mode_set | LCD.entry_left | LCD.entry_enable_shift);
+    idx = '0';
+    while (idx <= '9') : (idx += 1) {
+        lcd.write(idx);
+        small_sleep(3);
+    }
+    lcd.command(LCD.entry_mode_set | LCD.entry_left);
+    lcd.command(LCD.clear_display);
+    small_sleep(1);
+
+
+
     for ("It's alive!") |b| lcd.write(b); // loop is 22 byte prelude, 6 byte prologue (register allocation is still awful), string is 11 bytes. `write` in inlined: 14 bytes, nice!
     
     var cmd: u8 = LCD.display_control; // 2 bytes

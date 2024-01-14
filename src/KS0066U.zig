@@ -45,10 +45,10 @@ pub fn KS0066U(
             write_four_bits(0x2); // 6
 
             command(function_set | two_line | five_by_eight_dots | four_bit_mode); // 6
-            command(display_control | display_on | cursor_on | blink_on); // 6
+            command(display_control | display_on | cursor_off | blink_off); // 6
             command(clear_display); // 6
             small_sleep(1); // 12
-            command(entry_mode_set | entry_left | entry_shift_decrement); // 6 (commands r all great. RCALLs could be better)
+            command(entry_mode_set | entry_left | entry_disable_shift); // 6 (commands r all great. RCALLs could be better)
         }
 
         fn write_four_bits(bits: u8) void {
@@ -61,6 +61,10 @@ pub fn KS0066U(
             if (bits & 0x08 != 0) mmio.setPin(D7, true);
             
             pulse_enable(); // inlined.
+        }
+        pub fn set_cursor(row: u8, col: u8) void {
+            const row_offsets: [4]u8 = .{ 0x00, 0x40, 0x14, 0x54 };
+            command(set_ddram_addr | (col + row_offsets[row])); // 6 bytes
         }
         pub fn command(value: u8) void {
             mmio.setPin(RS, false); // 2 bytes
@@ -96,20 +100,21 @@ pub fn KS0066U(
 // // Definitions:
 
 // Commands
-const clear_display = 0x01;
+pub const clear_display = 0x01;
 const return_home = 0x02;
-const entry_mode_set = 0x04;
+pub const entry_mode_set = 0x04;
 pub const display_control = 0x08;
 const cursor_shift = 0x10;
 const function_set = 0x20;
 const set_cgram_addr = 0x40;
-const set_ddram_addr = 0x80;
+pub const set_ddram_addr = 0x80;
 
 // Entry mode set flags
-const entry_right = 0x00;
-const entry_left = 0x02;
-const entry_shift_increment = 0x01;
-const entry_shift_decrement = 0x00;
+pub const entry_right = 0x00;
+pub const entry_left = 0x02;
+pub const entry_enable_shift = 0x01;
+pub const entry_disable_shift = 0x00;
+
 
 // Display control flags
 pub const display_on = 0x04;
