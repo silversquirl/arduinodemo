@@ -24,7 +24,7 @@ pub fn Cpu(comptime variant_: Variant, comptime package_: Package) type {
         }
         is_current_target: struct {},
 
-        pub fn get_io_space(_: *@This()) *volatile [REGISTER_SPACE_SIZE]u8 {
+        pub fn get_io_space(_: *const @This()) *volatile [REGISTER_SPACE_SIZE]u8 {
             return @ptrFromInt(0x20);
         }
         pub fn get_memory_space(_: *const @This()) *volatile @This().Abi {
