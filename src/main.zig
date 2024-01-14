@@ -3,6 +3,26 @@ const std = @import("std");
 const uno = @import("arduino_uno_rev3.zig");
 const rt = uno.use();
 const io = rt.mcu.get_memory_space();
+const sleep = @import("sleep.zig");
+const small_sleep = sleep.small_sleep;
+fn Pin_(comptime mmio_: Mmio) type {
+    return struct {
+        v: Pin,
+        pub fn setMode(self: *const @This(), mode: PinMode) void {
+            mmio_.setPinMode(self.v, mode);
+        }
+        pub fn set(self: *const @This(), value: bool) void {
+            mmio_.setPin(self.v, value);
+        }
+        pub fn data_register(self: *const @This()) *volatile u8 {
+            return &mmio_.io[self.v.data_register()];
+        }
+        pub fn mask(self: *const @This()) u8 {
+            return 1 << self.v.pin_idx();
+        }
+    };
+}
+const Lcd = @import("Lcd.zig");
 
 // fn abort() callconv(.Naked) noreturn {
 //     while (true) {}
@@ -16,68 +36,6 @@ const PORTB: *volatile u8 = @ptrFromInt(0x25);
 const PINB: *volatile u8 = @ptrFromInt(0x23);
 const SP: *volatile u16 = @ptrFromInt(0x5D);
 
-// returns after (low + high * 2^16) * (2 + 1 + 2) + 1 + (4) cycles
-fn burn_24bit(low: u16, high: u8)  void {
-    asm volatile(
-        \\ 0:
-        \\  sbiw %[low], 1  // 2 cycles
-        \\  sbci %[high], 0 // 1 cycle
-        \\  brne 0b         // 2 cycles when taken, 1 cycle when not taken
-        : [low] "+w" (low),
-          [high] "+r" (high),
-    );
-    // return in 4 cycles for 16 bit PC - atmega328p has 32k of flash
-    return;
-}
-const sleeps: [5]u32 = .{
-    50 * 1000,
-    4500,
-    150,
-    500 * 1000,
-    1,
-
-};
-const sleeps_low: [5]u16 = .{
-    @truncate(calc_iters(sleeps[0])),
-    @truncate(calc_iters(sleeps[1])),
-    @truncate(calc_iters(sleeps[2])),
-    @truncate(calc_iters(sleeps[3])),
-    @truncate(calc_iters(sleeps[4])),
-};
-const sleeps_high: [5]u8 = .{
-    @truncate(calc_iters(sleeps[0]) >> 16),
-    @truncate(calc_iters(sleeps[1]) >> 16),
-    @truncate(calc_iters(sleeps[2]) >> 16),
-    @truncate(calc_iters(sleeps[3]) >> 16),
-    @truncate(calc_iters(sleeps[4]) >> 16),
-};
-
-fn small_sleep_inner(id: u8) void {
-    // Ideally we'd use a single array here, but codegen is best like this. LLVM can't consolodate the loads of a [3]u8.
-    return burn_24bit(sleeps_low[id], sleeps_high[id]);
-}
-inline fn small_sleep(id: u8) void {
-    @call(.never_inline, small_sleep_inner, .{ id });
-}
-fn calc_iters(us: u32) u32 {
-    const cycles_to_burn = (us * cycles_per_micro);
-    // cycles_to_burn = (low + high * 2^16) * (2 + 1 + 2) + 1 + (4)
-    // (cycles_to_burn - 5) / 5 = (low + high * 2^16) = iters
-    return (cycles_to_burn - 5) / 5;
-}
-const freq = 16 * 1000 * 1000;
-const micro = 1000 * 1000;
-const cycles_per_micro = freq  / micro;
-fn burn_u24(iters: u24) void {
-    burn_24bit(@truncate(iters), @truncate(iters >> 16));
-}
-fn burn_us(us: u32) void {
-    const cycles_to_burn = (us * cycles_per_micro);
-    // cycles_to_burn = (low + high * 2^16) * (2 + 1 + 2) + 1 + (4)
-    // (cycles_to_burn - 5) / 5 = (low + high * 2^16) = iters
-    burn_u24(@truncate((cycles_to_burn - 5) / 5));
-}
-    
     
 fn sbi(reg: *volatile u8, bit: u3) void {
     reg.* |= @as(u8, 1) << bit;
@@ -113,6 +71,16 @@ fn cli() void {
 }
 const PINS: [4]Pin = .{ D4, D5, D6, D7 };
 
+const UnoPin = Pin_(mmio);
+const MyLcd = Lcd.Lcd(UnoPin, .{ .v = ENABLE },
+    .{ .v = RS },
+    .{
+        .{ .v = D4 },
+        .{ .v = D5 },
+        .{ .v = D6 },
+        .{ .v = D7 },
+    }
+);
 // Ideally we'd use a calling convention with full caller-preserves, but that's not supported yet
 fn main() noreturn {
     cli();
@@ -126,89 +94,25 @@ fn main() noreturn {
     io.UCSR0B.byte = 0b00011000;
 
     for ("Hello, World!\n") |c| out(c);
-    mmio.setPinMode(RS,.output);
-    mmio.setPinMode(ENABLE,.output);
+    var lcd = MyLcd.init();
 
-    // Be careful with optimizations! Removing `inline` here generates 60 bytes of iteration and translation logic
-    // FIXME: Improve codegen for setPinMode
-    inline for (PINS) |pin| mmio.setPinMode(pin, .output);
-
-    mmio.setPin(RS, false);
-    mmio.setPin(ENABLE, false);
-
-    small_sleep(0);
-    write_four_bits(0x3); // long call. 6 bytes
-    small_sleep(1);       // inlined : 16 bytes. codegen is not great here, it shuffles a lot of registers around
-                          // A call is 2 bytes, and 2 more for the arg somewhere. + 1 nop prelude in a sleep block makes this 3x smaller, and even better when a sleep is reused.
-
-    write_four_bits(0x3); // 6
-    small_sleep(1);        // 10! It's smart abt reusing the registers from above. It's probably optimal at runtime, cool!
-
-    write_four_bits(0x3); // 6
-    small_sleep(3);         // 12
-
-    write_four_bits(0x2); // 6
-
-    command(function_set | two_line | five_by_eight_dots | four_bit_mode); // 6
-    command(display_control | display_on | cursor_on | blink_on); // 6
-    command(clear_display); // 6
-    small_sleep(1); // 12
-    command(entry_mode_set | entry_left | entry_shift_decrement); // 6 (commands r all great. RCALLs could be better)
-
-    for ("It's alive!") |b| write(b); // loop is 22 byte prelude, 6 byte prologue (register allocation is still awful), string is 11 bytes. `write` in inlined: 14 bytes, nice!
+    for ("It's alive!") |b| lcd.write(b);
     
-    var cmd: u8 = display_control; // 2 bytes
+    var cmd: u8 = Lcd.display_control; // 2 bytes
 
     sbi(DDRB, LED_PIN);
     while (true) {
         sbi(PINB, LED_PIN);
-        cmd ^= display_on; // 2 bytes + 2 bytes allocating reg
-        command(cmd); // 6 bytes - failed to allocate registers again. This should be 4 bytes
+        cmd ^= Lcd.display_on; // 2 bytes + 2 bytes allocating reg
+        lcd.command(cmd); // 6 bytes - failed to allocate registers again. This should be 4 bytes
         small_sleep(3);
     }
-}
-fn pulse_enable() void {
-    mmio.setPin(ENABLE, false); // perfect: 2 bytes
-    small_sleep(4);                 // 14 bytes
-    mmio.setPin(ENABLE, true);
-    small_sleep(4); // enable pulse must be >450ns  // 8 bytes! good job :)
-    mmio.setPin(ENABLE, false);
-    small_sleep(2); // commands need > 37us to settle // 12 bytes
 }
 const mask: u8 = (1 << D4.pin_idx()) | (1 << D5.pin_idx()) | (1 << D6.pin_idx()) | (1 << D7.pin_idx());
 comptime {
     std.debug.assert(D4.data_register() == D5.data_register());
     std.debug.assert(D4.data_register() == D6.data_register());
     std.debug.assert(D4.data_register() == D7.data_register());
-}
-
-fn write_four_bits(bits: u8) void {
-    mmio.io[D4.data_register()] &= ~mask;
-
-    // These ifs should be compiling as sbrs, but use (in->and->or->out) instead.
-    if (bits & 0x01 != 0) mmio.setPin(D4, true);
-    if (bits & 0x02 != 0) mmio.setPin(D5, true);
-    if (bits & 0x04 != 0) mmio.setPin(D6, true);
-    if (bits & 0x08 != 0) mmio.setPin(D7, true);
-    
-    pulse_enable(); // inlined.
-}
-fn command(value: u8) void {
-    mmio.setPin(RS, false); // 2 bytes
-    write_eight_bits(value); // 4 bytes
-    // 2 bytes for return (aw. should've tailed)
-}
-fn write(value: u8) void {
-    mmio.setPin(RS, true);
-    write_eight_bits(value);
-}
-fn swap_nibbles(value: u8) u8 {
-    return (value << 4) | (value >> 4);
-}
-fn write_eight_bits(value: u8) void {
-    write_four_bits(swap_nibbles(value)); // 16 bytes (need to move registers around. callconv doesn't give any scratch)
-    write_four_bits(value); // 4 bytes
-    // return 2
 }
 export fn trampoline() callconv(.C) noreturn {
     @call(.always_inline, main, .{});
@@ -389,48 +293,3 @@ fn clear_bss() void {
         ::: "memory", "cc"
     );
 }
-// // LCD driven using the KS0066U controller
-// // https://pdf1.alldatasheet.com/datasheet-pdf/download/37318/SAMSUNG/KS0066.html
-// // Definitions:
-
-// Commands
-const clear_display = 0x01;
-const return_home = 0x02;
-const entry_mode_set = 0x04;
-const display_control = 0x08;
-const cursor_shift = 0x10;
-const function_set = 0x20;
-const set_cgram_addr = 0x40;
-const set_ddram_addr = 0x80;
-
-// Entry mode set flags
-const entry_right = 0x00;
-const entry_left = 0x02;
-const entry_shift_increment = 0x01;
-const entry_shift_decrement = 0x00;
-
-// Display control flags
-const display_on = 0x04;
-const display_off = 0x00;
-const cursor_on = 0x02;
-const cursor_off = 0x00;
-const blink_on = 0x01;
-const blink_off = 0x00;
-
-// Cursor shift flags
-const display_move = 0x08;
-const cursor_move = 0x00;
-const move_right = 0x04;
-const move_left = 0x00;
-
-// Function set flags
-const eight_bit_mode = 0x10;
-const four_bit_mode = 0x00;
-const two_line = 0x08;
-const one_line = 0x00;
-const five_by_ten_dots = 0x04;
-const five_by_eight_dots = 0x00;
-
-// Busy flag
-const busy_flag = 0x80;
-
