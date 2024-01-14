@@ -12,6 +12,10 @@ pub fn use() @This() {
     // FIXME: assert that the env is arduino_uno_rev3
     return .{ .mcu = Mcu.use() };
 }
+pub fn digital_pin(id: u8) ?MegaAVR.PortPin {
+    if (id >= digital_pins.len) return null;
+    return Mcu.get_pin(digital_pins[id]).to_port_pin() orelse unreachable;
+}
 pub fn led_pin() MegaAVR.PortPin {
-    return Mcu.get_pin(digital_pins[LED_PIN_ID]).to_port_pin() orelse unreachable;
+    return digital_pin(LED_PIN_ID).?;
 }

@@ -1,9 +1,12 @@
 const std = @import("std");
 
+const AbiCapture = Abi;
 pub fn Cpu(comptime variant_: Variant, comptime package_: Package) type {
     return struct {
         pub const package = package_;
         pub const variant = variant_;
+        pub const mmio = io;
+        pub const Abi = AbiCapture;
 
         const REGISTER_SPACE_SIZE = 256;
         pub fn use() @This() {
@@ -22,6 +25,9 @@ pub fn Cpu(comptime variant_: Variant, comptime package_: Package) type {
         is_current_target: struct {},
 
         pub fn get_io_space(_: *@This()) *volatile [REGISTER_SPACE_SIZE]u8 {
+            return @ptrFromInt(0x20);
+        }
+        pub fn get_memory_space(_: *@This()) *volatile @This().Abi {
             return @ptrFromInt(0x20);
         }
         pub fn get_pin(pin: u8) Pin {
@@ -113,32 +119,56 @@ pub const Variant = enum {
     }
 };
 
-pub const PortPin = enum {
-    B0, B1, B2, B3, B4, B5, B6, B7,
-    C0, C1, C2, C3, C4, C5, C6,
-    D0, D1, D2, D3, D4, D5, D6, D7,
+const PORTB_IDX = (0 << 3);
+const PORTC_IDX = (1 << 3);
+const PORTD_IDX = (2 << 3);
+pub const PortPin = enum(u8) {
+    B0 = PORTB_IDX | 0,
+    B1 = PORTB_IDX | 1,
+    B2 = PORTB_IDX | 2,
+    B3 = PORTB_IDX | 3,
+    B4 = PORTB_IDX | 4,
+    B5 = PORTB_IDX | 5,
+    B6 = PORTB_IDX | 6,
+    B7 = PORTB_IDX | 7,
 
-    pub fn input(self: PortPin) u12 {
-        switch (self) {
-            inline else => |variant| return @field(io, "PIN" ++ @tagName(variant))
-        }
+    C0 = PORTC_IDX | 0,
+    C1 = PORTC_IDX | 1,
+    C2 = PORTC_IDX | 2,
+    C3 = PORTC_IDX | 3,
+    C4 = PORTC_IDX | 4,
+    C5 = PORTC_IDX | 5,
+    C6 = PORTC_IDX | 6,
+
+    D0 = PORTD_IDX | 0,
+    D1 = PORTD_IDX | 1,
+    D2 = PORTD_IDX | 2,
+    D3 = PORTD_IDX | 3,
+    D4 = PORTD_IDX | 4,
+    D5 = PORTD_IDX | 5,
+    D6 = PORTD_IDX | 6,
+    D7 = PORTD_IDX | 7,
+
+    const PORT_GPIO_SIZE = io.PINC - io.PINB;
+    fn port_idx(self: PortPin) u8 {
+        return @intFromEnum(self) >> 3;
     }
-    pub fn data(self: PortPin) u12 {
-        switch (self) {
-            inline else => |variant| return @field(io, "PORT" ++ @tagName(variant))
-        }
+    pub fn pin_idx(self: PortPin) u3 {
+        return @truncate(@intFromEnum(self));
     }
-    pub fn data_direction(self: PortPin) u12 {
-        switch (self) {
-            inline else => |variant| {
-                return @field(io, "DD" ++ @tagName(variant));
-            }
-        }
+    // FIXME: Sadly can't optimize these well and generates big lookup tables. Rewrite.
+    pub fn input_register(self: PortPin) u8 {
+        return io.PINB + self.port_idx() * PORT_GPIO_SIZE;
+    }
+    pub fn data_register(self: PortPin) u8 {
+        return io.PORTB + self.port_idx() * PORT_GPIO_SIZE;
+    }
+    pub inline fn data_direction_register(self: PortPin) u8 {
+        return io.DDRB + self.port_idx() * PORT_GPIO_SIZE;
     }
 };
-
-
-const io = make_registers(&.{.{0x03, &.{
+const Block = struct { comptime_int, []const [:0]const u8 };
+const io_blocks: []const Block = &.{.{0x03, &.{
     "PINB", "PINB0", "PINB1", "PINB2", "PINB3", "PINB4", "PINB5", "PINB6", "PINB7",
     "DDRB", "DDB0", "DDB1", "DDB2", "DDB3", "DDB4", "DDB5", "DDB6", "DDB7",
     "PORTB", "PORTB0", "PORTB1", "PORTB2", "PORTB3", "PORTB4", "PORTB5", "PORTB6", "PORTB7",
@@ -158,11 +188,11 @@ const io = make_registers(&.{.{0x03, &.{
     "PCIFR", "PCIF0", "PCIF1", "PCIF2", "", "", "", "", "",
     "EIFR", "INTF0", "INTF1", "", "", "", "", "", "",
     "EIMSK", "INT0", "INT1", "", "", "", "", "", "",
-    "GPIOR0", "", "", "", "", "", "", "", 
+    "GPIOR0", "", "", "", "", "", "", "", "", 
     "EECR", "EERE", "EEPE", "EEMPE", "EERIE", "EEPM0", "EEPM1", "", "",
-    "EEDR", "", "", "", "", "", "", "",
-    "EEARL", "", "", "", "", "", "", "",
-    "EEARH", "", "", "", "", "", "", "",
+    "EEDR", "", "", "", "", "", "", "","",
+    "EEARL", "", "", "", "", "", "", "", "",
+    "EEARH", "", "", "", "", "", "", "", "",
     "GTCCR", "PSRSYNC", "PSRASY", "", "", "", "", "", "TSM",
     "TCCR0A", "WGM00", "WGM01", "", "", "COM0B0", "COM0B1", "COM0A0", "COM0A1",
     "TCCR0B", "CS00", "CS01", "CS02", "WGM02", "", "", "FOC0B", "FOC0A",
@@ -186,8 +216,116 @@ const io = make_registers(&.{.{0x03, &.{
     "SPL", "SP0", "SP1", "SP2", "SP3", "SP4", "SP5", "SP6", "SP7",
     "SPH", "SP8", "SP9", "SP10", "", "", "", "", "",
     "SREG", "C", "Z", "N", "V", "S", "H", "T", "I",
-}}});
-fn Registers(comptime register_blocks: []const struct { comptime_int, []const [:0]const u8 }) type {
+}}};
+const mem_blocks: []const Block = blocks: while (true) {
+    var blocks: []const Block = &.{};
+    for (io_blocks) |block| blocks = blocks ++ @as([]const Block, &.{Block{block[0] + 0x20, block[1]}});
+    break :blocks blocks ++ @as([]const Block, &.{
+        .{0x60, &.{
+            "WDTCSR", "WDP0", "WDP1", "WDP2", "WDE", "WDCE", "WDP3", "WDIE", "WDIF",
+            "CLKPR", "CLKPS0", "CLKPS1", "CLKPS2", "CLKPS3", "", "", "", "CLKPCE", 
+        }},
+        .{0xC0, &.{
+            "UCSR0A", "MPCM0", "U2X0", "UPE0", "DOR0", "FE0", "UDRE0", "TXC0", "RXC0",
+            "UCSR0B", "TXB80", "RXB80", "UCSZ02", "TXEN0", "RXEN0", "UDRIE0", "TXCIE0", "RXCIE0",
+            "UCSR0C", "UCPOL0", "UCSZ00", "UCSZ01", "USBS0", "UPM00", "UPM01", "UMSEL00", "UMSEL01",
+        }},
+        .{0xC4, &.{
+            "UBRR0H", "", "", "", "", "", "", "", "",
+            "UBRR0L", "", "", "", "", "", "", "", "",
+            "UDR0", "", "", "", "", "", "", "", "",
+        }}
+    });
+};
+pub const Abi = make_mem_abi(mem_blocks);
+fn make_mem_abi(comptime blocks: []const Block) type {
+    var fields: []const std.builtin.Type.StructField = &.{};
+    var padding_fields = 0;
+    var current_offset = 0x20;
+    for (blocks) |block| {
+        const addr = block[0];
+        if (addr > current_offset) {
+            padding_fields += 1;
+            const name = "padding" ++ @as([]const u8, &.{'0' + current_offset});
+            // @compileLog(name);
+            fields = fields ++ .{
+                .{ .name = name,
+                    .type = @Type(std.builtin.Type {  .Array = .{ .child = u8, .len = addr - current_offset, .sentinel = null } }),
+                    .default_value = null,
+                    .is_comptime = false,
+                    .alignment = 0
+                }
+            };
+        }
+        const data = block[1];
+        const registers = (data.len + 8) / 9;
+        current_offset = addr + registers;
+        for (0..registers) |n| {
+            const name = data[n * 9];
+            fields = fields ++ .{
+                .{
+                    .name = name,
+                    .type = register_type(data[n * 9 + 1..@min((n+1) * 9, block[1].len)]),
+                    .default_value = null,
+                    .is_comptime = false,
+                    .alignment = 0
+                },
+            };
+        }
+    }
+    const typeInfo: std.builtin.Type = .{
+        .Struct = .{
+            .layout = .Extern,
+            .fields = fields,
+            .decls = &.{},
+            .is_tuple = false,
+        }
+    };
+    return @Type(typeInfo);
+}
+fn register_type(comptime bits: []const [:0]const u8) type {
+    var fields: [8]std.builtin.Type.StructField = undefined;
+    var padding_fields = 0;
+    for (0..8) |i| {
+        const padding = i >= bits.len or bits[i].len == 0;
+        if (padding) padding_fields += 1;
+        fields[i] = .{
+            .name = if (padding) "padding" ++ .{'0' + padding_fields} else bits[i],
+            .type = bool,
+            .default_value = null,
+            .is_comptime = false,
+            .alignment = 0,
+        };
+    }
+    if (padding_fields == 8) return u8;
+    const packed_bits = @Type(.{
+        .Struct = .{
+            .layout = .Packed,
+            .fields = &fields,
+            .decls = &.{},
+            .is_tuple = false,
+        }
+    });
+
+    return @Type(std.builtin.Type {
+        .Union = .{
+            .layout = .Extern,
+            .tag_type = null,
+            .fields = &.{ .{
+                .name = "bits",
+                .type = packed_bits,
+                .alignment = 0,
+            }, .{
+                .name = "byte",
+                .type = u8,
+                .alignment = 0
+            } },
+            .decls = &.{},
+        }
+    });
+}
+pub const io = make_registers(io_blocks);
+fn Registers(comptime register_blocks: []const Block) type {
     var n_registers = 0;
     for (register_blocks) |block| n_registers += block[1].len;
     var registers: [n_registers]std.builtin.Type.StructField = undefined;
@@ -196,14 +334,20 @@ fn Registers(comptime register_blocks: []const struct { comptime_int, []const [:
         for (block[1], 0..) |reg, j| {
             if (reg.len == 0) continue;
             const byte = j / 9;
-            const offset = (j % 9) -| 1;
+            const offset = (j % 9);
             registers[i] = .{
                 .name = reg,
                 .type = u12,
-                .default_value = &((block[0] + byte) * 8 + offset),
+                .default_value = null,
                 .is_comptime = true,
                 .alignment = 0,
             };
+            if (offset == 0) {
+                registers[i].default_value = &(block[0] + byte);
+                registers[i].type = u8;
+            } else {
+                registers[i].default_value = &((block[0] + byte) * 8 + (offset -| 1));
+            }
             i += 1;
         }
     }

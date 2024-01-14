@@ -10,13 +10,14 @@ pub fn build(b: *std.Build) !void {
         .name = "sketch",
         .root_source_file = .{ .path = "src/main.zig" },
         .optimize = .ReleaseSmall,
-    }, .{ .target = target_device.target, }).getEmittedBin();
-    const firmware = b.addObjCopy(sketch_elf, .{ .format = .bin });
-    _ = std.Target.avr.cpu.atmega328p;
+        
+    }, .{ .target = target_device.target, });
+    sketch_elf.setLinkerScript(.{ .path = "src/linker.ld" });
+    const firmware = b.addObjCopy(sketch_elf.getEmittedBin(), .{ .format = .bin });
     
     arduino.addUpload(target_device, firmware.getOutput());
     
     // Install the firmware in zig-out by default
-    b.getInstallStep().dependOn(&b.addInstallBinFile(sketch_elf, "sketch.elf").step);
+    b.getInstallStep().dependOn(&b.addInstallBinFile(sketch_elf.getEmittedBin(), "sketch.elf").step);
     b.getInstallStep().dependOn(&b.addInstallBinFile(firmware.getOutput(), "sketch.bin").step);
 }
