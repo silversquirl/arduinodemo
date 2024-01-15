@@ -66,9 +66,32 @@ pub fn KS0066U(
             
             pulse_enable(); // inlined.
         }
-        pub fn set_cursor(row: u8, col: u8) void {
-            const row_offsets: [4]u8 = .{ 0x00, 0x40, 0x14, 0x54 };
-            command(set_ddram_addr | (col + row_offsets[row])); // 6 bytes
+        pub fn set_cursor(self: @This(), col: u8, row: u8) void {
+            self.set_ddram_addr(row * 0x40 + col);
+        }
+        pub fn clear(_: @This()) void {
+            command(clear_display); 
+            small_sleep(1); 
+        }
+        
+        pub fn print(self: @This(), comptime format: []const u8, args: anytype) void {
+            return std.fmt.format(self, format, args) catch |e| {
+                switch(e) {}
+            };
+        }
+        pub fn display(_: @This(), on: bool, cursor: bool, blink: bool) void {
+            var cmd: u8 = display_control;
+            if (on) cmd |= display_on;
+            if (cursor) cmd |= cursor_on;
+            if (blink) cmd |= blink_on;
+            command(cmd);
+        }
+        
+        pub fn set_ddram_addr(_: @This(), addr: u8) void {
+            command(SET_DRAM_ADDR | addr); 
+        }
+        pub fn set_entry_mode(_: @This(), direction: Direction, follow_cursor: ViewMode) void {
+            command(entry_mode_set | @intFromEnum(direction) | @intFromEnum(follow_cursor)); // 6 bytes
         }
         pub fn command(value: u8) void {
             mmio.setPin(RS, false); // 2 bytes
@@ -110,6 +133,8 @@ pub fn KS0066U(
     };
 }
 
+pub const Direction = enum(u8) { increment = 2, decrement = 0 };
+pub const ViewMode = enum(u8) { follow = 1, fixed = 0 };
 // // LCD driven using the KS0066U controller
 // // https://pdf1.alldatasheet.com/datasheet-pdf/download/37318/SAMSUNG/KS0066.html
 // // Definitions:
@@ -122,7 +147,7 @@ pub const display_control = 0x08;
 const cursor_shift = 0x10;
 const function_set = 0x20;
 const set_cgram_addr = 0x40;
-pub const set_ddram_addr = 0x80;
+pub const SET_DRAM_ADDR = 0x80;
 
 // Entry mode set flags
 pub const entry_right = 0x00;
@@ -156,3 +181,4 @@ const five_by_eight_dots = 0x00;
 // Busy flag
 const busy_flag = 0x80;
 
+pub const LINE2_ADDRESS = 0x40;
