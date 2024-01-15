@@ -13,13 +13,14 @@ pub fn KS0066U(
     const PINS: [4]mmio_.Pin = .{ D4, D5, D6, D7 };
     return struct {
         const mask: u8 = (1 << D4.pin_idx()) | (1 << D5.pin_idx()) | (1 << D6.pin_idx()) | (1 << D7.pin_idx());
+        pub const Error = error {};
         comptime {
             std.debug.assert(D4.data_register() == D5.data_register());
             std.debug.assert(D4.data_register() == D6.data_register());
             std.debug.assert(D4.data_register() == D7.data_register());
         }
 
-        pub fn init() void {
+        pub fn init() @This() {
             
             mmio.setPinMode(RS,.output);
             mmio.setPinMode(ENABLE,.output);
@@ -40,7 +41,7 @@ pub fn KS0066U(
             small_sleep(1);        // 10! It's smart abt reusing the registers from above. It's probably optimal at runtime, cool!
 
             write_four_bits(0x3); // 6
-            small_sleep(3);         // 12
+            small_sleep(2);         // 12
 
             write_four_bits(0x2); // 6
 
@@ -49,6 +50,9 @@ pub fn KS0066U(
             command(clear_display); // 6
             small_sleep(1); // 12
             command(entry_mode_set | entry_left | entry_disable_shift); // 6 (commands r all great. RCALLs could be better)
+
+
+            return @This() {};
         }
 
         fn write_four_bits(bits: u8) void {
@@ -71,9 +75,20 @@ pub fn KS0066U(
             write_eight_bits(value); // 4 bytes
             // 2 bytes for return (aw. should've tailed)
         }
-        pub fn write(value: u8) void {
+        pub fn write(_: @This(), value: u8) void {
             mmio.setPin(RS, true);
             write_eight_bits(value);
+        }
+        pub fn writeByteNTimes(self: @This(), byte: u8, n: usize) Error!void {
+            for (0..n) |_| {
+                self.write(byte);
+            }
+        }
+        pub fn writeAll(self: @This(), value: []const u8) Error!void {
+            for (value) |byte| {
+                self.write(byte);
+            }
+            // return value.len;
         }
         fn swap_nibbles(value: u8) u8 {
             return (value << 4) | (value >> 4);

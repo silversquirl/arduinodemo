@@ -63,7 +63,7 @@ fn main() noreturn {
     io.UCSR0B.byte = 0b00011000;
 
     for ("Hello, World!\n") |c| out(c);
-    lcd.init();
+    const instance = lcd.init();
 
     lcd.set_cursor(0,0);
     var idx: u8 = '0';
@@ -86,14 +86,20 @@ fn main() noreturn {
 
 
 
-    for ("It's alive!") |b| lcd.write(b); // loop is 22 byte prelude, 6 byte prologue (register allocation is still awful), string is 11 bytes. `write` in inlined: 14 bytes, nice!
+    for ("It's alive!") |b| instance.write(b); // loop is 22 byte prelude, 6 byte prologue (register allocation is still awful), string is 11 bytes. `write` in inlined: 14 bytes, nice!
     
     var cmd: u8 = LCD.display_control; // 2 bytes
 
     sbi(DDRB, LED_PIN);
+    var i: u8 = 0;
     while (true) {
         sbi(PINB, LED_PIN);
         cmd ^= LCD.display_on; // 2 bytes + 2 bytes allocating reg
+        if ((cmd & LCD.display_on) != 0) {
+            i += 1;
+            lcd.set_cursor(0, 12);
+            std.fmt.format(instance, "{: >3}", .{i}) catch {};
+        }
         lcd.command(cmd); // 6 bytes - failed to allocate registers again. This should be 4 bytes
         small_sleep(3);
     }
@@ -102,6 +108,36 @@ export fn trampoline() callconv(.C) noreturn {
     @call(.always_inline, main, .{});
 }
 
+// https://github.com/gcc-mirror/gcc/blob/8414f10ad5bad6d522b72f9ae35e0bb86bb290ea/libgcc/config/avr/lib1funcs.S#L1342-L1356
+export fn __udivmodqi4() callconv(.Naked) void {
+    var r_rem: u8 = undefined;
+    var r_cnt: u8 = undefined;
+    var r_arg1: u8 = undefined;
+    var r_arg2: u8 = undefined;
+    asm volatile(
+        \\ 	   sub	%[r_rem],%[r_rem]	; clear remainder and carry
+        \\     ldi	%[r_cnt],9		; init loop counter
+        \\     rjmp	1f	; jump to entry point
+        \\ 0:
+        \\     rol	%[r_rem]		; shift dividend into remainder
+        \\     cp	%[r_rem],%[r_arg2]	; compare remainder & divisor
+        \\     brcs	1f	; remainder <= divisor
+        \\     sub	%[r_rem],%[r_arg2]	; restore remainder
+        \\ 1:
+        \\     rol	%[r_arg1]		; shift dividend (with CARRY)
+        \\     dec	%[r_cnt]		; decrement loop counter
+        \\     brne	0b
+        \\     com	%[r_arg1]		; complement result
+        \\                 ; because C flag was complemented in loop
+        \\     ret
+        : [r_rem] "={r25}" (r_rem),
+          [r_cnt] "={r23}" (r_cnt),
+          [r_arg1] "+{r24}" (r_arg1),
+          [r_arg2] "+{r22}" (r_arg2),
+        :
+        :
+    );
+}
 export fn _start() callconv(.Naked) noreturn {
     asm volatile(
         \\ ldi r16, lo8(%[RAM_END])
