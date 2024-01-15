@@ -15,6 +15,15 @@ const DDRB: *volatile u8 = @ptrFromInt(0x24);
 const PORTB: *volatile u8 = @ptrFromInt(0x25);
 const PINB: *volatile u8 = @ptrFromInt(0x23);
     
+const mmio = Mmio { .io = rt.mcu.get_io_space() };
+
+const RS = uno.digital_pin(12).?;
+const ENABLE = uno.digital_pin(11).?;
+const D4 = uno.digital_pin(5).?;
+const D5 = uno.digital_pin(4).?;
+const D6 = uno.digital_pin(3).?;
+const D7 = uno.digital_pin(2).?;
+
 fn sbi(reg: *volatile u8, bit: u3) void {
     reg.* |= @as(u8, 1) << bit;
 }
@@ -83,13 +92,11 @@ pub fn main() noreturn {
     lcd.command(LCD.clear_display);
     small_sleep(1);
 
-
-
-    for ("It's alive!") |b| instance.write(b); // loop is 22 byte prelude, 6 byte prologue (register allocation is still awful), string is 11 bytes. `write` in inlined: 14 bytes, nice!
+    for ("It's alive!") |b| instance.write(b);
     
-    var cmd: u8 = LCD.display_control; // 2 bytes
-
     sbi(DDRB, LED_PIN);
+
+    var cmd: u8 = LCD.display_control; // 2 bytes
     var i: u8 = 0;
     while (true) {
         sbi(PINB, LED_PIN);
@@ -103,48 +110,5 @@ pub fn main() noreturn {
         small_sleep(3);
     }
 }
-
-// https://github.com/gcc-mirror/gcc/blob/8414f10ad5bad6d522b72f9ae35e0bb86bb290ea/libgcc/config/avr/lib1funcs.S#L1342-L1356
-comptime {
-
-    @export(__udivmodqi4, .{ .name = "__udivmodqi4", .linkage = .Weak });
-}
-fn __udivmodqi4() linksection("rt") callconv(.Naked) void {
-    var r_rem: u8 = undefined;
-    var r_cnt: u8 = undefined;
-    var r_arg1: u8 = undefined;
-    var r_arg2: u8 = undefined;
-    asm volatile(
-        \\ 	   sub	%[r_rem],%[r_rem]	; clear remainder and carry
-        \\     ldi	%[r_cnt],9		; init loop counter
-        \\     rjmp	1f	; jump to entry point
-        \\ 0:
-        \\     rol	%[r_rem]		; shift dividend into remainder
-        \\     cp	%[r_rem],%[r_arg2]	; compare remainder & divisor
-        \\     brcs	1f	; remainder <= divisor
-        \\     sub	%[r_rem],%[r_arg2]	; restore remainder
-        \\ 1:
-        \\     rol	%[r_arg1]		; shift dividend (with CARRY)
-        \\     dec	%[r_cnt]		; decrement loop counter
-        \\     brne	0b
-        \\     com	%[r_arg1]		; complement result
-        \\                 ; because C flag was complemented in loop
-        \\     ret
-        : [r_rem] "={r25}" (r_rem),
-          [r_cnt] "={r23}" (r_cnt),
-          [r_arg1] "+{r24}" (r_arg1),
-          [r_arg2] "+{r22}" (r_arg2),
-        :
-        :
-    );
-}
-const mmio = Mmio { .io = rt.mcu.get_io_space() };
-
-const RS = uno.digital_pin(12).?;
-const ENABLE = uno.digital_pin(11).?;
-const D4 = uno.digital_pin(5).?;
-const D5 = uno.digital_pin(4).?;
-const D6 = uno.digital_pin(3).?;
-const D7 = uno.digital_pin(2).?;
 
 

@@ -2,8 +2,36 @@ const std = @import("std");
 
 const RAM_END = 0x8FF;
 const SP: *volatile u16 = @ptrFromInt(0x5D);
-comptime {
-    _ = @import("root").os;
+
+// https://github.com/gcc-mirror/gcc/blob/8414f10ad5bad6d522b72f9ae35e0bb86bb290ea/libgcc/config/avr/lib1funcs.S#L1342-L1356
+fn __udivmodqi4() linksection("rt") callconv(.Naked) void {
+    var r_rem: u8 = undefined;
+    var r_cnt: u8 = undefined;
+    var r_arg1: u8 = undefined;
+    var r_arg2: u8 = undefined;
+    asm volatile(
+        \\ 	   sub	%[r_rem],%[r_rem]	; clear remainder and carry
+        \\     ldi	%[r_cnt],9		; init loop counter
+        \\     rjmp	1f	; jump to entry point
+        \\ 0:
+        \\     rol	%[r_rem]		; shift dividend into remainder
+        \\     cp	%[r_rem],%[r_arg2]	; compare remainder & divisor
+        \\     brcs	1f	; remainder <= divisor
+        \\     sub	%[r_rem],%[r_arg2]	; restore remainder
+        \\ 1:
+        \\     rol	%[r_arg1]		; shift dividend (with CARRY)
+        \\     dec	%[r_cnt]		; decrement loop counter
+        \\     brne	0b
+        \\     com	%[r_arg1]		; complement result
+        \\                 ; because C flag was complemented in loop
+        \\     ret
+        : [r_rem] "={r25}" (r_rem),
+          [r_cnt] "={r23}" (r_cnt),
+          [r_arg1] "+{r24}" (r_arg1),
+          [r_arg2] "+{r22}" (r_arg2),
+        :
+        :
+    );
 }
 pub fn install(comptime options: struct { main: ?fn() noreturn = null }) struct {} {
     const main = options.main orelse @import("root").main;
@@ -27,6 +55,7 @@ pub fn install(comptime options: struct { main: ?fn() noreturn = null }) struct 
             );
         }
     };
+    @export(__udivmodqi4, .{ .name = "__udivmodqi4", .linkage = .Weak });
     @export(platform.trampoline, .{ .name = "trampoline", .linkage = .Weak });
     @export(platform._start, .{ .name = "_start", .linkage = .Strong });
     return .{};
