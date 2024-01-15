@@ -1,6 +1,7 @@
 pub const MegaAVR = @import("MegaAVR.zig");
 
 pub const LED_PIN_ID = 13;
+pub const LED_PIN = digital_pin(LED_PIN_ID).?;
 
 // https://docs.arduino.cc/hacking/hardware/PinMapping168
 pub const analog_pins: [6]u8 = .{23, 24, 25, 26, 27, 28};
@@ -15,7 +16,4 @@ pub fn use() @This() {
 pub fn digital_pin(id: u8) ?MegaAVR.PortPin {
     if (id >= digital_pins.len) return null;
     return Mcu.get_pin(digital_pins[id]).to_port_pin() orelse unreachable;
-}
-pub fn led_pin() MegaAVR.PortPin {
-    return digital_pin(LED_PIN_ID).?;
 }

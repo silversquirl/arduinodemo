@@ -156,7 +156,6 @@ pub const PortPin = enum(u8) {
     pub fn pin_idx(self: PortPin) u3 {
         return @truncate(@intFromEnum(self));
     }
-    // FIXME: Sadly can't optimize these well and generates big lookup tables. Rewrite.
     pub fn input_register(self: PortPin) u8 {
         return io.PINB + self.port_idx() * PORT_GPIO_SIZE;
     }

@@ -16,6 +16,9 @@ const Pin = struct {
     pub inline fn setMode(self: Pin, mode: m.PinMode) void {
         mmio.setPinMode(self.pin, mode);
     }
+    pub inline fn setPullup(self: Pin, value: bool) void {
+        mmio.setPinPullup(self.pin, value);
+    }
     pub inline fn data_register(self: Pin) *volatile u8 {
         return &mmio.io[self.pin.data_register()];
     }
@@ -57,13 +60,13 @@ pub fn main() noreturn {
     screen.clear();
 
     for ("It's alive!") |b| screen.write(b);
-    
-    sbi(&io.DDRB.byte, LED_PIN);
 
-    var on = false; 
+    mmio.setPinMode(uno.LED_PIN, .output);
+
+    var on = false;
     var i: u8 = 0;
     while (true) {
-        sbi(&io.PINB.byte, LED_PIN);
+        mmio.togglePin(uno.LED_PIN);
         on = !on;
         if (!on) {
             screen.set_cursor(12, 0);
