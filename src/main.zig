@@ -68,7 +68,7 @@ fn main() noreturn {
     lcd.set_cursor(0,0);
     var idx: u8 = '0';
     while (idx <= '9') : (idx += 1) {
-        lcd.write(idx);
+        instance.write(idx);
         small_sleep(3);
     }
     // lcd.set_cursor(16, 1);
@@ -77,7 +77,7 @@ fn main() noreturn {
     lcd.command(LCD.entry_mode_set | LCD.entry_left | LCD.entry_enable_shift);
     idx = '0';
     while (idx <= '9') : (idx += 1) {
-        lcd.write(idx);
+        instance.write(idx);
         small_sleep(3);
     }
     lcd.command(LCD.entry_mode_set | LCD.entry_left);
