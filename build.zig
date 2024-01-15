@@ -14,6 +14,22 @@ pub fn build(b: *std.Build) !void {
         .single_threaded = true,
     }, .{ .target = target_device.target, });
     sketch_elf.setLinkerScript(.{ .path = "src/linker.ld" });
+    const imports = b.allocator.alloc(std.Build.Module.Import, 2) catch @panic("OOM");
+    const uno = b.addModule("arduino_uno_rev3", .{ .root_source_file = .{ .path = "src/arduino_uno_rev3.zig" }});
+    const init = b.addModule("compiler_rt", .{ .root_source_file = .{.path ="src/init.zig" }, .imports = &.{.{
+        .name = "arduino_uno_rev3",
+        .module = uno,
+    }}});
+    imports[0] = .{
+        .name = "compiler_rt",
+        .module = init
+    };
+    imports[1] = .{
+        .name = "arduino_uno_rev3",
+        .module = uno,
+    };
+    sketch_elf.options.root_module.imports = imports;
+    // std.Build.addExecutable
     const firmware = b.addObjCopy(sketch_elf.getEmittedBin(), .{ .format = .bin });
     
     arduino.addUpload(target_device, firmware.getOutput());

@@ -1,4 +1,4 @@
-const uno = @import("arduino_uno_rev3.zig");
+const uno = @import("arduino_uno_rev3");
 pub const Pin = uno.MegaAVR.PortPin;
 
 pub const PinMode = enum {

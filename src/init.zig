@@ -4,6 +4,9 @@ const usart = @import("usart.zig");
 const RAM_END = 0x8FF;
 const SP: *volatile u16 = @ptrFromInt(0x5D);
 
+comptime {
+    _ = @import("root").os;
+}
 // https://github.com/gcc-mirror/gcc/blob/8414f10ad5bad6d522b72f9ae35e0bb86bb290ea/libgcc/config/avr/lib1funcs.S#L1342-L1356
 fn __udivmodqi4() linksection("rt") callconv(.Naked) void {
     var r_rem: u8 = undefined;

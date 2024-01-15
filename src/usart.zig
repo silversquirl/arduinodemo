@@ -1,5 +1,5 @@
 
-const uno = @import("arduino_uno_rev3.zig");
+const uno = @import("arduino_uno_rev3");
 const rt = uno.use();
 const io = rt.mcu.get_memory_space();
 

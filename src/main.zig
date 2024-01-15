@@ -1,11 +1,11 @@
 const std = @import("std");
-const init = @import("init.zig");
+const init = @import("compiler_rt");
 const small_sleep = @import("sleep.zig").small_sleep;
 const Mmio = @import("mmio.zig").Mmio;
 const LCD = @import("KS0066U.zig");
-const usart = @import("usart.zig");
+// const usart = @import("usart.zig");
 
-const uno = @import("arduino_uno_rev3.zig");
+const uno = @import("arduino_uno_rev3");
 const rt = uno.use();
 const io = rt.mcu.get_memory_space();
 const mmio = Mmio { .io = rt.mcu.get_io_space() };
@@ -27,9 +27,6 @@ fn sbi(reg: *volatile u8, bit: u3) void {
     reg.* |= @as(u8, 1) << bit;
 }
 pub const os = init.install(.{});
-comptime {
-    _ = os;
-}
 
 
 pub fn main() noreturn {
