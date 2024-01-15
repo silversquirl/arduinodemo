@@ -1,5 +1,36 @@
 const std = @import("std");
 
+const RAM_END = 0x8FF;
+const SP: *volatile u16 = @ptrFromInt(0x5D);
+comptime {
+    _ = @import("root").os;
+}
+pub fn install(comptime options: struct { main: ?fn() noreturn = null }) struct {} {
+    const main = options.main orelse @import("root").main;
+    const platform = struct {
+        fn trampoline() callconv(.C) noreturn {
+            @call(.always_inline, main, .{});
+        }
+
+        fn _start() callconv(.Naked) noreturn {
+            asm volatile(
+                \\ ldi r16, lo8(%[RAM_END])
+                \\ out (%[SP]-0x20), r16
+                \\ ldi r16, hi8(%[RAM_END])
+                \\ out (%[SP]-0x20+1), r16
+                \\
+                \\ jmp trampoline
+                :
+                :   [RAM_END] "i" (RAM_END),
+                    [SP] "i" (SP),
+                : "r16", "m"
+            );
+        }
+    };
+    @export(platform.trampoline, .{ .name = "trampoline", .linkage = .Weak });
+    @export(platform._start, .{ .name = "_start", .linkage = .Strong });
+    return .{};
+}
 // https://github.com/FireFox317/avr-arduino-zig/tree/master
 comptime {
     const root = @This();

@@ -9,13 +9,11 @@ const uno = @import("arduino_uno_rev3.zig");
 const rt = uno.use();
 const io = rt.mcu.get_memory_space();
 
-const RAM_END = 0x8FF;
 const F_CPU = 16000000;
 const LED_PIN = 5;
 const DDRB: *volatile u8 = @ptrFromInt(0x24);
 const PORTB: *volatile u8 = @ptrFromInt(0x25);
 const PINB: *volatile u8 = @ptrFromInt(0x23);
-const SP: *volatile u16 = @ptrFromInt(0x5D);
     
 fn sbi(reg: *volatile u8, bit: u3) void {
     reg.* |= @as(u8, 1) << bit;
@@ -49,9 +47,10 @@ fn cli() void {
         ::: "cc"
     );
 }
+pub export const os = init.install(.{});
 
 // Ideally we'd use a calling convention with full caller-preserves, but that's not supported yet
-fn main() noreturn {
+pub fn main() noreturn {
     cli();
     init.copy_data_to_ram();
     init.clear_bss();
@@ -104,12 +103,13 @@ fn main() noreturn {
         small_sleep(3);
     }
 }
-export fn trampoline() callconv(.C) noreturn {
-    @call(.always_inline, main, .{});
-}
 
 // https://github.com/gcc-mirror/gcc/blob/8414f10ad5bad6d522b72f9ae35e0bb86bb290ea/libgcc/config/avr/lib1funcs.S#L1342-L1356
-export fn __udivmodqi4() callconv(.Naked) void {
+comptime {
+
+    @export(__udivmodqi4, .{ .name = "__udivmodqi4", .linkage = .Weak });
+}
+fn __udivmodqi4() linksection("rt") callconv(.Naked) void {
     var r_rem: u8 = undefined;
     var r_cnt: u8 = undefined;
     var r_arg1: u8 = undefined;
@@ -137,21 +137,6 @@ export fn __udivmodqi4() callconv(.Naked) void {
         :
         :
     );
-}
-export fn _start() callconv(.Naked) noreturn {
-    asm volatile(
-        \\ ldi r16, lo8(%[RAM_END])
-        \\ out (%[SP]-0x20), r16
-        \\ ldi r16, hi8(%[RAM_END])
-        \\ out (%[SP]-0x20+1), r16
-        \\
-        \\ jmp trampoline
-        :
-        :   [RAM_END] "i" (RAM_END),
-            [SP] "i" (SP),
-        : "r16", "m"
-    );
-
 }
 const mmio = Mmio { .io = rt.mcu.get_io_space() };
 
