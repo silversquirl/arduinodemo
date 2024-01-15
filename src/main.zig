@@ -1,36 +1,46 @@
 const std = @import("std");
 const init = @import("compiler_rt");
 const small_sleep = @import("sleep.zig").small_sleep;
-const Mmio = @import("mmio.zig").Mmio;
-const LCD = @import("KS0066U.zig");
+const m = @import("mmio.zig");
 
 const uno = @import("arduino_uno_rev3");
 const rt = uno.use();
 const io = rt.mcu.get_memory_space();
-const mmio = Mmio { .io = rt.mcu.get_io_space() };
+const mmio = m.Mmio { .io = rt.mcu.get_io_space() };
 
-const LED_PIN = 5;
-const DDRB: *volatile u8 = @ptrFromInt(0x24);
-const PORTB: *volatile u8 = @ptrFromInt(0x25);
-const PINB: *volatile u8 = @ptrFromInt(0x23);
-
-const RS = uno.digital_pin(12).?;
-const ENABLE = uno.digital_pin(11).?;
-const D4 = uno.digital_pin(5).?;
-const D5 = uno.digital_pin(4).?;
-const D6 = uno.digital_pin(3).?;
-const D7 = uno.digital_pin(2).?;
-const lcd = @import("KS0066U.zig").KS0066U(mmio, ENABLE, RS, D4, D5, D6, D7);
+const Pin = struct {
+    pin: uno.MegaAVR.PortPin,
+    pub inline fn set(self: Pin, value: bool) void {
+        mmio.setPin(self.pin, value);
+    }
+    pub inline fn setMode(self: Pin, mode: m.PinMode) void {
+        mmio.setPinMode(self.pin, mode);
+    }
+    pub inline fn data_register(self: Pin) *volatile u8 {
+        return &mmio.io[self.pin.data_register()];
+    }
+    pub inline fn pin_idx(self: Pin) u8 {
+        return self.pin.pin_idx();
+    }
+};
 
 fn sbi(reg: *volatile u8, bit: u3) void {
     reg.* |= @as(u8, 1) << bit;
 }
 pub const os = init.install(.{});
 
+const LED_PIN = uno.led_pin().pin_idx();
 
 pub fn main() noreturn {
     std.debug.print("Hello, World!\n", .{});
-    const screen = lcd.init();
+    const screen = @import("KS0066U.zig").init(
+        Pin { .pin = uno.digital_pin(11).? },
+        Pin { .pin = uno.digital_pin(12).? },
+        Pin { .pin = uno.digital_pin(5).? },
+        Pin { .pin = uno.digital_pin(4).? },
+        Pin { .pin = uno.digital_pin(3).? },
+        Pin { .pin = uno.digital_pin(2).? },
+    );
 
     screen.set_cursor(0,0);
     for ('0'..'9') |idx| {
@@ -48,17 +58,17 @@ pub fn main() noreturn {
 
     for ("It's alive!") |b| screen.write(b);
     
-    sbi(DDRB, LED_PIN);
+    sbi(&io.DDRB.byte, LED_PIN);
 
     var on = false; 
     var i: u8 = 0;
     while (true) {
-        sbi(PINB, LED_PIN);
+        sbi(&io.PINB.byte, LED_PIN);
         on = !on;
         if (!on) {
-            i += 1;
             screen.set_cursor(12, 0);
             screen.print("{: >3}", .{i});
+            i += 1;
         }
         screen.display(on, false, false); 
         small_sleep(3);
