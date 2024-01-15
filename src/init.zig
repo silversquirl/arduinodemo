@@ -1,4 +1,5 @@
 const std = @import("std");
+const usart = @import("usart.zig");
 
 const RAM_END = 0x8FF;
 const SP: *volatile u16 = @ptrFromInt(0x5D);
@@ -40,10 +41,11 @@ inline fn cli() void {
         ::: "cc"
     );
 }
-pub fn install(comptime options: struct { main: ?fn() noreturn = null }) struct {} {
+pub fn install(comptime options: struct { main: ?fn() noreturn = null }) type {
     const main = options.main orelse @import("root").main;
     const platform = struct {
         fn trampoline() callconv(.C) noreturn {
+            usart.init();
             @call(.always_inline, main, .{});
         }
 
@@ -68,7 +70,23 @@ pub fn install(comptime options: struct { main: ?fn() noreturn = null }) struct 
     @export(__udivmodqi4, .{ .name = "__udivmodqi4", .linkage = .Weak });
     @export(platform.trampoline, .{ .name = "trampoline", .linkage = .Weak });
     @export(platform._start, .{ .name = "_start", .linkage = .Strong });
-    return .{};
+    return struct {
+        pub const system = struct {
+            pub const fd_t = struct {
+                data: u16,
+            };
+            pub fn write(_: fd_t, buf: [*]const u8, len: usize) isize {
+                for (buf[0..len]) |c| usart.out(c);
+                return @intCast(len);
+            }
+            pub const E = Error;
+            pub const STDERR_FILENO = fd_t{ .data = 2 };
+            pub const Error = enum { SUCCESS, INTR, INVAL, FAULT, AGAIN, BADF, DESTADDRREQ, DQUOT, FBIG, IO, NOSPC, PERM, PIPE, NOTCAPABLE, CONNRESET, BUSY };
+            pub fn getErrno(_: isize) Error {
+                return .SUCCESS;
+            }
+        };
+    };
 }
 // https://github.com/FireFox317/avr-arduino-zig/tree/master
 comptime {

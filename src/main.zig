@@ -26,12 +26,14 @@ const lcd = @import("KS0066U.zig").KS0066U(mmio, ENABLE, RS, D4, D5, D6, D7);
 fn sbi(reg: *volatile u8, bit: u3) void {
     reg.* |= @as(u8, 1) << bit;
 }
-pub export const os = init.install(.{});
+pub const os = init.install(.{});
+comptime {
+    _ = os;
+}
 
 
 pub fn main() noreturn {
-    usart.init();
-    for ("Hello, World!\n") |c| usart.out(c);
+    std.debug.print("Hello, World!\n", .{});
     const screen = lcd.init();
 
     screen.set_cursor(0,0);

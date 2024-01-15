@@ -10,7 +10,8 @@ pub fn build(b: *std.Build) !void {
         .name = "sketch",
         .root_source_file = .{ .path = "src/main.zig" },
         .optimize = .ReleaseSmall,
-        
+        // Single threaded mode lets us use `stderr_mutex` for now. TODO: Add our own mutex implementation that handles interrupts right.
+        .single_threaded = true,
     }, .{ .target = target_device.target, });
     sketch_elf.setLinkerScript(.{ .path = "src/linker.ld" });
     const firmware = b.addObjCopy(sketch_elf.getEmittedBin(), .{ .format = .bin });
