@@ -33,6 +33,13 @@ fn __udivmodqi4() linksection("rt") callconv(.Naked) void {
         :
     );
 }
+
+inline fn cli() void {
+    asm volatile(
+        \\ cli
+        ::: "cc"
+    );
+}
 pub fn install(comptime options: struct { main: ?fn() noreturn = null }) struct {} {
     const main = options.main orelse @import("root").main;
     const platform = struct {
@@ -41,6 +48,9 @@ pub fn install(comptime options: struct { main: ?fn() noreturn = null }) struct 
         }
 
         fn _start() callconv(.Naked) noreturn {
+            cli();
+            copy_data_to_ram();
+            clear_bss();
             asm volatile(
                 \\ ldi r16, lo8(%[RAM_END])
                 \\ out (%[SP]-0x20), r16
@@ -133,7 +143,7 @@ export fn _unhandled_vector() void {
     while (true) {}
 }
 
-pub fn copy_data_to_ram() void {
+inline fn copy_data_to_ram() void {
     asm volatile (
         \\  ; load Z register with the address of the data in flash
         \\  ldi r30, lo8(__data_load_start)
@@ -158,7 +168,7 @@ pub fn copy_data_to_ram() void {
     );
 }
 
-pub fn clear_bss() void {
+inline fn clear_bss() void {
     asm volatile (
         \\  ; load X register with the beginning of bss section
         \\  ldi r26, lo8(__bss_start)

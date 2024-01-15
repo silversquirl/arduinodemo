@@ -9,13 +9,12 @@ const usart = @import("usart.zig");
 const uno = @import("arduino_uno_rev3.zig");
 const rt = uno.use();
 const io = rt.mcu.get_memory_space();
+const mmio = Mmio { .io = rt.mcu.get_io_space() };
 
 const LED_PIN = 5;
 const DDRB: *volatile u8 = @ptrFromInt(0x24);
 const PORTB: *volatile u8 = @ptrFromInt(0x25);
 const PINB: *volatile u8 = @ptrFromInt(0x23);
-    
-const mmio = Mmio { .io = rt.mcu.get_io_space() };
 
 const RS = uno.digital_pin(12).?;
 const ENABLE = uno.digital_pin(11).?;
@@ -27,24 +26,10 @@ const D7 = uno.digital_pin(2).?;
 fn sbi(reg: *volatile u8, bit: u3) void {
     reg.* |= @as(u8, 1) << bit;
 }
-
-const UDR0 = 0xC6;
-const UDRE0 = 0x05;
-const UCSR0A = 0xC0;
-
-fn cli() void {
-    asm volatile(
-        \\ cli
-        ::: "cc"
-    );
-}
 pub export const os = init.install(.{});
 
 // Ideally we'd use a calling convention with full caller-preserves, but that's not supported yet
 pub fn main() noreturn {
-    cli();
-    init.copy_data_to_ram();
-    init.clear_bss();
 
     usart.init();
     for ("Hello, World!\n") |c| usart.out(c);
