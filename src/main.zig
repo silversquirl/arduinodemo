@@ -3,7 +3,6 @@ const init = @import("compiler_rt");
 const small_sleep = @import("sleep.zig").small_sleep;
 const Mmio = @import("mmio.zig").Mmio;
 const LCD = @import("KS0066U.zig");
-// const usart = @import("usart.zig");
 
 const uno = @import("arduino_uno_rev3");
 const rt = uno.use();
@@ -34,16 +33,14 @@ pub fn main() noreturn {
     const screen = lcd.init();
 
     screen.set_cursor(0,0);
-    var idx: u8 = '0';
-    while (idx <= '9') : (idx += 1) {
-        screen.write(idx);
+    for ('0'..'9') |idx| {
+        screen.write(@intCast(idx));
         small_sleep(3);
     }
     screen.set_cursor(16, 1);
     screen.set_entry_mode(.increment, .follow);
-    idx = '0';
-    while (idx <= '9') : (idx += 1) {
-        screen.write(idx);
+    for ('0'..'9') |idx| {
+        screen.write(@intCast(idx));
         small_sleep(3);
     }
     screen.set_entry_mode(.increment, .fixed);
@@ -53,7 +50,7 @@ pub fn main() noreturn {
     
     sbi(DDRB, LED_PIN);
 
-    var on = false; // 2 bytes
+    var on = false; 
     var i: u8 = 0;
     while (true) {
         sbi(PINB, LED_PIN);
