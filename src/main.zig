@@ -4,12 +4,12 @@ const small_sleep = @import("sleep.zig").small_sleep;
 const Mmio = @import("mmio.zig").Mmio;
 const LCD = @import("KS0066U.zig");
 const lcd = @import("KS0066U.zig").KS0066U(mmio, ENABLE, RS, D4, D5, D6, D7);
+const usart = @import("usart.zig");
 
 const uno = @import("arduino_uno_rev3.zig");
 const rt = uno.use();
 const io = rt.mcu.get_memory_space();
 
-const F_CPU = 16000000;
 const LED_PIN = 5;
 const DDRB: *volatile u8 = @ptrFromInt(0x24);
 const PORTB: *volatile u8 = @ptrFromInt(0x25);
@@ -27,28 +27,10 @@ const D7 = uno.digital_pin(2).?;
 fn sbi(reg: *volatile u8, bit: u3) void {
     reg.* |= @as(u8, 1) << bit;
 }
-const BAUD_RATE = 9600; // can go up to 500_000 stably. Datasheet claims 1M but messages start getting garbled in arduino studio
-const BAUD_PRESCALE = ((F_CPU / 8 / BAUD_RATE) - 1);
 
 const UDR0 = 0xC6;
 const UDRE0 = 0x05;
 const UCSR0A = 0xC0;
-fn spin_until_bit_set(comptime reg: *volatile u8, comptime bit: u8) void {
-    var tmp: u8 = undefined;
-    asm volatile(
-        \\ 0:
-        \\   lds r16, %[reg]
-        \\   sbrs r16, %[bit]
-        \\   rjmp 0b
-        : [tmp] "=&r" (tmp)
-        : [bit] "I" (bit),
-          [reg] "i" (reg)
-    );
-}
-fn out(c: u8) void {
-    spin_until_bit_set(&io.UCSR0A.byte, 5);
-    io.UDR0 = c;
-}
 
 fn cli() void {
     asm volatile(
@@ -64,13 +46,8 @@ pub fn main() noreturn {
     init.copy_data_to_ram();
     init.clear_bss();
 
-    io.UCSR0A.byte = 0b00000010;
-    io.UBRR0L = @truncate(BAUD_PRESCALE);
-    io.UBRR0H = @truncate(BAUD_PRESCALE >> 8);
-    io.UCSR0C.byte = 0b00000110;
-    io.UCSR0B.byte = 0b00011000;
-
-    for ("Hello, World!\n") |c| out(c);
+    usart.init();
+    for ("Hello, World!\n") |c| usart.out(c);
     const instance = lcd.init();
 
     lcd.set_cursor(0,0);
